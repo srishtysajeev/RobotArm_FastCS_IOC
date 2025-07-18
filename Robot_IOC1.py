@@ -3,12 +3,13 @@ from __future__ import annotations
 from pathlib import Path 
 from dataclasses import dataclass
 import asyncio
+from typing import Any
 
 #fastcs imports 
 from fastcs.controller import Controller, BaseController
 from fastcs.launch import FastCS
 #The below represent the different types of attributes representing access modes of the API 
-from fastcs.attributes import AttrR, AttrRW, AttrHandlerR
+from fastcs.attributes import AttrR, AttrW, AttrRW, AttrHandlerRW
 #The below represent fastcs datatypes 
 from fastcs.datatypes import Float, Int, String
 from fastcs.transport.epics.ca.options import EpicsCAOptions, EpicsGUIOptions
@@ -23,24 +24,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 from uarm.wrapper import SwiftAPI
 from uarm.tools.list_ports import get_ports
 
-
-# def robot_connection() -> SwiftAPI:
-#     ports = get_ports(filters={'hwid': 'USB VID:PID=2341:0042'}) 
-#     print("Ports: ",ports)
-#     if not ports:
-#         raise ConnectionError("The device is not connected")
-#     swift = SwiftAPI(port=ports[0]['device'])
-#     return swift
-
-# def get_pos() -> list[float]:
-#      position_list = robot_connection().get_position(timeout=10)
-#      return position_list
-# position = get_pos()
-# x_pos = position[0]
-# print(x_pos)
-
 @dataclass
-class PositionUpdater(AttrHandlerR):
+class PositionUpdater(AttrHandlerRW):
     update_period: float | None = 0.2
     _controller: RobotController | None = None
 
@@ -56,16 +41,19 @@ class PositionUpdater(AttrHandlerR):
         return self._controller
 
     async def update(self, attr: AttrR):
-        
-        pos = self.controller.connection.get_position(timeout=5)
-
-        #get_pos()[0] # update this so that get_pos is only called once and then you get the values from it 
+        self.controller.connection.flush_cmd()
+        pos = self.controller.connection.get_position() # waits 5 seconds in an attempt to not get the timeout error 
         if isinstance(pos, list):
             x_pos = pos[0]
             await attr.set(value=x_pos) 
 
         else:
             print(f"Update Error: Failed to get position from robot, recieved {pos}")
+
+    async def put(self, attr: AttrW, value: Any):
+        self.controller.connection.set_position(x = value)
+        #self.controller.connection.send_cmd_async()
+
             
         #print("X position",x_pos)
         #attr.set(self.controller.connection.get_position(timeout=10)[0])
@@ -74,34 +62,29 @@ class PositionUpdater(AttrHandlerR):
         #value = response.strip("\r\n")
 
 class RobotController(Controller):
-    device_id = AttrR(String()) # the variable name is important here! make sure you understand why 
- # try and figure out where these things are coming from   you had the variable name as x_position and it didn't work 
- # it does work acc! you need to get rid of underscore and add capitals  
-    x_pos = AttrR(Float(), handler=PositionUpdater())
+    device_id = AttrR(String()) # the variable name is important here - You need to get rid of underscore and add capitals to get the PV name 
+    x_pos = AttrRW(Float(), handler=PositionUpdater())
 
     def __init__(self):
         super().__init__()
         self.description = "A robot controller"
-        #
-        self.connection = SwiftAPI()
+        self.connection = SwiftAPI() 
         #self.connection = robot_connection() # this should make a connection as soon as the class is initialized 
         
 
-    async def connect(self):
+    async def connect(self): #this method happens straight away and makes sure that only one connection is made
 
-        ports = get_ports(filters={'hwid': 'USB VID:PID=2341:0042'}) #maybe get rid of this so that  tuser specifies port
-        print("Ports: ",ports)
+        ports = get_ports(filters={'hwid': 'USB VID:PID=2341:0042'}) #maybe get rid of this so that the user specifies ports
+        print("Ports: ", ports)
         if not ports:
             raise ConnectionError("The device is not connected")
 
-        self.connection.connect(port=ports[0]['device'])
-        await asyncio.sleep(1)
+        self.connection.connect(port=ports[0]['device']) # this takes the first port available - causes issues if you have two of the same device
+        #plugged in but this is good enough for now. 
+        
+        #self.connection.flush_cmd()
+        #await asyncio.sleep(0.5) # try and get rid of this and fix maybe with disconnect 
 
-
-# robot = RobotController()
-# robot.connect()
-# positions = robot.connection.get_position()
-# print(positions)
 
 gui_options = EpicsGUIOptions(
     output_path=Path(".") / "robot.bob", title="My Robot Controller"
