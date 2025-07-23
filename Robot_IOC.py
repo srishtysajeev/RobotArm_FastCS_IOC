@@ -4,7 +4,6 @@ from pathlib import Path
 from dataclasses import dataclass
 import asyncio
 from typing import Any
-import numpy as np
 
 #fastcs imports 
 from fastcs.controller import Controller, BaseController
@@ -12,7 +11,7 @@ from fastcs.launch import FastCS
 #The below represent the different types of attributes representing access modes of the API 
 from fastcs.attributes import AttrR, AttrW, AttrRW, AttrHandlerRW
 #The below represent fastcs datatypes 
-from fastcs.datatypes import Float, Int, String, Waveform
+from fastcs.datatypes import Float, Int, String
 from fastcs.transport.epics.ca.options import EpicsCAOptions, EpicsGUIOptions
 from fastcs.transport.epics.options import EpicsIOCOptions
 #from fastcs.connections import IPConnection, IPConnectionSettings
@@ -42,26 +41,23 @@ class PositionUpdater(AttrHandlerRW):
         return self._controller
 
     async def update(self, attr: AttrR):
-        #self.controller.connection.flush_cmd()
-        pos = self.controller.connection.get_position() 
-        #print(pos)
-        if isinstance(pos, list) :
-            #new_pos = [Float(x) for x in pos]
-            #dpos = np.array([Float(x) for x in pos])
-            dpos = np.array(pos)
-    
-            #print(dpos)
-            await attr.set(value=dpos)
+        #self.controller.connection.flush_cmd() # need to be careful with this - depending on whether we want to get back intermediate steps 
+        pos = self.controller.connection.get_position() # waits 5 seconds in an attempt to not get the timeout error 
+        if isinstance(pos, list):
+            x_pos = pos[0]
+            await attr.set(value=x_pos) 
+
         else:
             print(f"Update Error: Failed to get position from robot, recieved {pos}")
 
     async def put(self, attr: AttrW, value: Any):
-        self.controller.connection.set_position(x = value[0], y= value[1], z = value[2])
+        self.controller.connection.set_position(x = value)
         #self.controller.connection.send_cmd_async()
 
+
 class RobotController(Controller):
-    device_id = AttrR(String()) # the variable name is important here - You need to get rid of underscore and add capitals to get the PV name 
-    pos = AttrRW(Waveform(array_dtype=float, shape=(3,)), handler=PositionUpdater())
+    #device_id = AttrR(String()) # the variable name is important here - You need to get rid of underscore and add capitals to get the PV name 
+    x_pos = AttrRW(Float(), handler=PositionUpdater())
 
     def __init__(self):
         super().__init__()
@@ -78,7 +74,6 @@ class RobotController(Controller):
             raise ConnectionError("The device is not connected")
 
         self.connection.connect(port=ports[0]['device']) # this takes the first port available - causes issues if you have two of the same device
-        # maybe make this a for loop instead 
         #plugged in but this is good enough for now. 
         
         #self.connection.flush_cmd()
@@ -99,4 +94,3 @@ fastcs = FastCS(RobotController(), [epics_options])
 fastcs.create_gui()
 
 fastcs.run()
-
