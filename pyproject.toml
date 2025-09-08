@@ -16,7 +16,7 @@ dependencies = [
     "fastapi[standard]",
     "numpy",
     "pydantic",
-    "pvi~=0.10.0",
+    "pvi>=0.10,<0.12",
     "pytango",
     "softioc>=4.5.0",
     "strawberry-graphql",
